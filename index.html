@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Birthday Kuji</title>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  body{background:#0a0a0c;color:#f4f1ea;font-family:'Inter','Noto Sans JP',sans-serif;min-height:100vh;
+    background-image:radial-gradient(60% 40% at 15% 0%,rgba(139,92,246,.25),transparent),radial-gradient(50% 40% at 90% 10%,rgba(59,130,246,.2),transparent),radial-gradient(60% 40% at 50% 100%,rgba(236,72,153,.18),transparent);
+    background-attachment:fixed}
+  .glass{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+  .gold{background:linear-gradient(120deg,#f6e3a1,#d4a64a 50%,#f6e3a1);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .art{position:relative;overflow:hidden;aspect-ratio:1/1;display:flex;align-items:flex-end;padding:12px}
+  .art .t{font-weight:900;line-height:1;letter-spacing:-.02em;text-shadow:0 2px 14px rgba(0,0,0,.35);position:relative;z-index:1}
+  .art::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 80% 15%,rgba(255,255,255,.45),transparent 40%)}
+  .card{transition:transform .3s,box-shadow .3s}
+  .card:hover{transform:translateY(-4px) scale(1.02);box-shadow:0 0 40px rgba(212,166,74,.25)}
+  .foil{background:linear-gradient(135deg,#2a2a35,#6b5a2c 30%,#f6e3a1 50%,#6b5a2c 70%,#2a2a35);background-size:200% 200%;animation:sh 3s linear infinite}
+  @keyframes sh{to{background-position:200% 200%}}
+  @keyframes pop{0%{transform:scale(.6);opacity:0}60%{transform:scale(1.06)}100%{transform:scale(1);opacity:1}}
+  .pop{animation:pop .8s cubic-bezier(.2,.9,.3,1.2) both}
+  .glow{box-shadow:0 0 60px rgba(139,92,246,.45),0 0 120px rgba(236,72,153,.25)}
+  #fx{position:fixed;inset:0;pointer-events:none;z-index:50}
+  #handle{touch-action:none}
+</style>
+</head>
+<body class="pb-10" style="padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)">
+<canvas id="fx"></canvas>
+<div id="app" class="max-w-5xl mx-auto px-4"></div>
+
+<script>
+/* ================= 景品設定（ここを編集） =================
+   img: 景品画像のURL（相対パス可。例 "images/1.jpg"）。空なら自動生成アートを表示
+   message: 当選時に表示するメッセージ                                         */
+const PRIZES = [
+  {id:1, rank:"A賞", name:"ペアディナー券",       message:"いつものお店で、ちょっと特別な夜を。", c:["#2563eb","#7c3aed"], img:""},
+  {id:2, rank:"B賞", name:"お花のプレゼント",     message:"今日の主役にぴったりの花束を。",       c:["#16a34a","#a855f7"], img:""},
+  {id:3, rank:"C賞", name:"日帰りデートプラン",   message:"行き先はあなたが決めてOK！",           c:["#b45309","#166534"], img:""},
+  {id:4, rank:"D賞", name:"お揃いアクセサリー",   message:"ずっと身につけてほしいな。",           c:["#7c3aed","#ec4899"], img:""},
+  {id:5, rank:"E賞", name:"手作りケーキ券",       message:"一緒に作ろう、甘さは好みで。",         c:["#f97316","#ec4899"], img:""},
+  {id:6, rank:"F賞", name:"マッサージ券 30分",    message:"肩でも足でもお任せください。",         c:["#18181b","#6366f1"], img:""},
+  {id:7, rank:"G賞", name:"映画ナイト券",         message:"ポップコーンは私が用意します。",       c:["#3b82f6","#c4b5fd"], img:""},
+  {id:8, rank:"H賞", name:"お願い何でも1回券",    message:"できる範囲で何でも叶えます！",          c:["#be123c","#7c2d12"], img:""},
+  {id:9, rank:"I賞", name:"手紙とアルバム",       message:"思い出と気持ちを、言葉にしました。",   c:["#facc15","#ef4444"], img:""},
+  {id:10,rank:"ラストワン賞", name:"おいしいごはん券", message:"食べたいものをなんでもどうぞ。",   c:["#c084fc","#f9a8d4"], img:""},
+];
+const TITLE = "Happy Birthday!";
+/* ======================================================== */
+
+const $app = document.getElementById('app');
+const q = new URLSearchParams(location.search);
+const baseUrl = location.origin.startsWith('http') ? location.origin + location.pathname : location.href.split('?')[0];
+const store = {
+  get(){try{return JSON.parse(localStorage.getItem('kuji_opened')||'{}')}catch(e){return {}}},
+  set(o){try{localStorage.setItem('kuji_opened',JSON.stringify(o))}catch(e){}}
+};
+
+function art(p, big){
+  if(p.img) return `<div class="art ${big?'rounded-3xl':'rounded-xl'}"><img src="${p.img}" class="absolute inset-0 w-full h-full object-cover" alt="${p.name}"></div>`;
+  return `<div class="art ${big?'rounded-3xl':'rounded-xl'}" style="background:linear-gradient(145deg,${p.c[0]},${p.c[1]})">
+    <div class="t ${big?'text-4xl':'text-lg'} text-white">${p.name}</div></div>`;
+}
+
+/* ---------- 管理者画面 ---------- */
+function renderAdmin(){
+  const opened = store.get();
+  $app.innerHTML = `
+  <header class="py-8 flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <p class="text-xs tracking-widest text-zinc-400">ADMIN</p>
+      <h1 class="text-3xl md:text-4xl font-black gold">誕生日一番くじ 管理</h1>
+      <p class="text-zinc-400 text-sm mt-1">景品一覧とQRコード。印刷して渡してください。</p>
+    </div>
+    <div class="flex gap-2">
+      <button id="print" class="glass rounded-2xl px-4 py-2 text-sm hover:bg-white/10">QRを印刷</button>
+      <button id="reset" class="glass rounded-2xl px-4 py-2 text-sm hover:bg-white/10">この端末の開封履歴をリセット</button>
+    </div>
+  </header>
+  <div class="glass rounded-2xl p-4 mb-6 text-sm text-zinc-300">
+    QRの読み取り先: <span class="text-amber-300 break-all">${baseUrl}?id=○</span>
+    <span class="block text-zinc-500 text-xs mt-1">※ GitHub Pages等に公開したURLで開くと、そのURLでQRが生成されます。</span>
+  </div>
+  <div id="grid" class="grid grid-cols-2 md:grid-cols-5 gap-4"></div>`;
+  const grid = document.getElementById('grid');
+  PRIZES.forEach(p=>{
+    const el = document.createElement('div');
+    el.className = 'card glass rounded-2xl p-3';
+    el.innerHTML = `${art(p)}
+      <div class="mt-3 flex items-center justify-between">
+        <span class="text-xs px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-300">${p.rank}</span>
+        <span class="text-xs text-zinc-400">No.${p.id}</span>
+      </div>
+      <div class="font-bold mt-1 text-sm">${p.name}</div>
+      <div class="text-xs text-zinc-400 mt-1">${opened[p.id]?'✅ 開封済み（この端末）':'未開封'}</div>
+      <div class="mt-3 bg-white rounded-xl p-2 flex justify-center"><div class="qr"></div></div>
+      <a href="${baseUrl}?id=${p.id}" target="_blank" class="block text-center text-xs text-violet-300 mt-2 underline">プレビュー</a>`;
+    grid.appendChild(el);
+    new QRCode(el.querySelector('.qr'),{text:`${baseUrl}?id=${p.id}`,width:110,height:110,correctLevel:QRCode.CorrectLevel.M});
+  });
+  document.getElementById('print').onclick = ()=>window.print();
+  document.getElementById('reset').onclick = ()=>{ if(confirm('開封履歴をリセットしますか？')){store.set({});renderAdmin();} };
+}
+
+/* ---------- ホーム（IDなし） ---------- */
+function renderHome(){
+  $app.innerHTML = `<div class="min-h-screen flex flex-col items-center justify-center text-center">
+    <div class="text-6xl mb-4">🎁</div>
+    <h1 class="text-4xl font-black gold">${TITLE}</h1>
+    <p class="text-zinc-400 mt-4">くじのQRコードを<br>スマホで読み取ってね</p></div>`;
+}
+
+/* ---------- くじ画面 ---------- */
+function renderKuji(id){
+  const p = PRIZES.find(x=>x.id===id);
+  if(!p){ renderHome(); return; }
+  const opened = store.get();
+  if(opened[id]){ showPrize(p,false); return; }
+
+  $app.innerHTML = `<div class="min-h-screen flex flex-col items-center justify-center">
+    <p class="text-xs tracking-[.3em] text-zinc-400">BIRTHDAY KUJI</p>
+    <h1 class="text-3xl font-black gold mt-1 mb-8">${TITLE}</h1>
+    <div class="relative w-full max-w-xs aspect-[3/4] rounded-3xl glow overflow-hidden glass">
+      <div class="absolute inset-0 flex flex-col items-center justify-center text-center p-6">
+        <div class="text-5xl mb-3">✨</div>
+        <p class="text-zinc-300 text-sm">あなたの景品は…</p>
+        <p class="text-2xl font-black mt-2">？？？</p>
+      </div>
+      <div id="foil" class="foil absolute inset-0 flex flex-col items-center justify-center text-center text-zinc-900" style="transition:transform .6s cubic-bezier(.6,0,.3,1),opacity .6s">
+        <div class="text-6xl mb-2">🎟️</div>
+        <div class="font-black text-2xl">No.${id}</div>
+        <div class="text-xs mt-1 font-bold tracking-widest">KUJI TICKET</div>
+      </div>
+    </div>
+    <div id="track" class="relative mt-10 w-full max-w-xs h-14 rounded-full glass overflow-hidden select-none">
+      <div id="fill" class="absolute left-0 top-0 h-full w-14 rounded-full" style="background:linear-gradient(90deg,#8b5cf6,#ec4899)"></div>
+      <div class="absolute inset-0 flex items-center justify-center text-sm text-zinc-300 pointer-events-none pl-8">スワイプして開ける →</div>
+      <div id="handle" class="absolute left-1 top-1 w-12 h-12 rounded-full bg-white text-zinc-900 flex items-center justify-center text-xl font-black shadow-lg cursor-grab">👆</div>
+    </div></div>`;
+
+  const track=document.getElementById('track'),handle=document.getElementById('handle'),fill=document.getElementById('fill');
+  let drag=false,x0=0,max=0,done=false;
+  const setX=x=>{handle.style.transform=`translateX(${x}px)`;fill.style.width=(x+56)+'px';};
+  handle.addEventListener('pointerdown',e=>{drag=true;x0=e.clientX;max=track.clientWidth-56;handle.setPointerCapture(e.pointerId);});
+  handle.addEventListener('pointermove',e=>{ if(!drag||done)return; setX(Math.max(0,Math.min(max,e.clientX-x0))); });
+  const end=e=>{
+    if(!drag||done)return; drag=false;
+    const cur=parseFloat((handle.style.transform.match(/-?[\d.]+/)||[0])[0]);
+    if(cur>max*.85){ done=true; setX(max); openIt(); }
+    else { handle.style.transition=fill.style.transition='all .3s'; setX(0); setTimeout(()=>handle.style.transition=fill.style.transition='',320); }
+  };
+  handle.addEventListener('pointerup',end); handle.addEventListener('pointercancel',end);
+
+  function openIt(){
+    const foil=document.getElementById('foil');
+    foil.style.transform='translateY(-110%) rotate(-6deg)'; foil.style.opacity='0';
+    confetti(120);
+    if(navigator.vibrate) navigator.vibrate([60,40,100]);
+    const o=store.get(); o[id]=Date.now(); store.set(o);
+    setTimeout(()=>showPrize(p,true),900);
+  }
+}
+
+function showPrize(p,fresh){
+  $app.innerHTML = `<div class="min-h-screen flex flex-col items-center justify-center text-center py-8">
+    <p class="text-xs tracking-[.3em] text-zinc-400">おめでとうございます！</p>
+    <h1 class="text-xl font-black text-amber-300 mt-1 mb-5">${p.rank} 当選</h1>
+    <div class="pop w-full max-w-xs glow rounded-3xl p-3 glass">${art(p,true)}
+      <div class="text-2xl font-black gold mt-4">${p.name}</div>
+      <p class="text-sm text-zinc-300 mt-2 mb-2">${p.message}</p>
+    </div>
+    <p class="text-xs text-zinc-500 mt-6">この画面を見せて景品と交換してね 🎁</p>
+    <button id="again" class="mt-4 glass rounded-2xl px-5 py-2 text-sm hover:bg-white/10">🎉 もう一度お祝い</button></div>`;
+  document.getElementById('again').onclick=()=>confetti(160);
+  if(fresh) confetti(220); else setTimeout(()=>confetti(60),300);
+}
+
+/* ---------- 紙吹雪 ---------- */
+const cv=document.getElementById('fx'),cx=cv.getContext('2d');let parts=[],running=false;
+function fit(){cv.width=innerWidth*devicePixelRatio;cv.height=innerHeight*devicePixelRatio;}
+fit();addEventListener('resize',fit);
+function confetti(n){
+  const cols=['#f6e3a1','#d4a64a','#8b5cf6','#3b82f6','#ec4899','#ffffff'];
+  const W=cv.width,H=cv.height,d=devicePixelRatio;
+  for(let i=0;i<n;i++) parts.push({x:W/2,y:H*.55,vx:(Math.random()-.5)*18*d,vy:(-Math.random()*20-6)*d,
+    s:(Math.random()*8+4)*d,r:Math.random()*6,vr:(Math.random()-.5)*.4,c:cols[i%cols.length],l:1});
+  if(!running){running=true;requestAnimationFrame(tick);}
+}
+function tick(){
+  cx.clearRect(0,0,cv.width,cv.height);
+  parts.forEach(p=>{p.vy+=.5*devicePixelRatio;p.x+=p.vx;p.y+=p.vy;p.r+=p.vr;p.vx*=.99;p.l-=.006;
+    cx.save();cx.globalAlpha=Math.max(p.l,0);cx.translate(p.x,p.y);cx.rotate(p.r);cx.fillStyle=p.c;cx.fillRect(-p.s/2,-p.s/4,p.s,p.s/2);cx.restore();});
+  parts=parts.filter(p=>p.l>0&&p.y<cv.height+50);
+  if(parts.length) requestAnimationFrame(tick); else {running=false;cx.clearRect(0,0,cv.width,cv.height);}
+}
+
+/* ---------- ルーティング ---------- */
+if(q.has('admin')) renderAdmin();
+else if(q.has('id')) renderKuji(parseInt(q.get('id'),10));
+else renderHome();
+</script>
+</body>
+</html>
